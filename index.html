@@ -1,0 +1,1547 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PocketFind">
+<meta name="theme-color" content="#2D5BFF">
+<meta name="format-detection" content="telephone=no">
+<title>PocketFind</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{
+  --accent:#2D5BFF; --accent-ink:#FFFFFF; --live:#14B86E; --danger:#D93A3F;
+  --bg:#E9EBEF; --ink:#15171C; --mute:#666C78; --line:rgba(21,23,28,.09);
+  --surface:rgba(250,251,253,.86); --solid:#FAFBFD; --field:#ECEEF2;
+  --tag-bg:#15171C; --tag-ink:#FFFFFF; --tag-mute:rgba(255,255,255,.64);
+  --float-shadow:0 6px 22px rgba(16,22,48,.16),0 1px 2px rgba(16,22,48,.10);
+  --font:"Instrument Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --accent:#5B7BFF; --live:#2BD487; --danger:#FF5C61;
+  --bg:#16181D; --ink:#ECEEF2; --mute:#8E95A2; --line:rgba(255,255,255,.08);
+  --surface:rgba(25,27,33,.86); --solid:#1A1C21; --field:#24272E;
+  --tag-bg:#F3F4F7; --tag-ink:#15171C; --tag-mute:rgba(21,23,28,.58);
+  --float-shadow:0 6px 22px rgba(0,0,0,.45),0 1px 2px rgba(0,0,0,.35);
+  color-scheme:dark;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{position:fixed;inset:0;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.4;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input{font:inherit;color:inherit;-webkit-user-select:text;user-select:text}
+button,a.btn{font:inherit;color:inherit;background:none;border:0;cursor:pointer;touch-action:manipulation;text-decoration:none}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.probe{position:fixed;left:0;width:0;visibility:hidden;pointer-events:none}
+#sabProbe{bottom:0;height:var(--sab)}
+#satProbe{top:0;height:var(--sat)}
+
+/* ---------- Map ---------- */
+#app{position:fixed;inset:0}
+#map{position:absolute;inset:0;z-index:0;background:var(--bg)}
+.leaflet-container{font-family:var(--font);background:var(--bg)}
+.leaflet-top{top:calc(var(--sat) + 4px)}
+.leaflet-control-attribution{background:transparent!important;color:rgba(0,0,0,.45)!important;font-size:9.5px!important;padding:0 6px!important;box-shadow:none!important}
+:root[data-theme="dark"] .leaflet-control-attribution{color:rgba(255,255,255,.4)!important}
+.scrim{position:fixed;left:0;right:0;top:0;height:calc(var(--sat) + 26px);background:linear-gradient(rgba(0,0,0,.30),rgba(0,0,0,0));pointer-events:none;z-index:10}
+
+/* Friend marker: avatar on the point, name and elapsed time right under it */
+.fm-wrap,.me-wrap{background:none;border:0}
+.fm{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;gap:5px;transform:translate(calc(-50% + var(--dx,0px)),-23px);transition:transform .3s cubic-bezier(.2,.8,.2,1)}
+.fm-av{position:relative;width:46px;height:46px;border-radius:50%;background:var(--c);color:#fff;display:grid;place-items:center;font-size:18px;font-weight:650;border:3px solid #fff;box-shadow:0 4px 14px rgba(10,16,40,.30);transition:transform .2s ease,filter .2s ease}
+.fm.is-live .fm-av::after{content:"";position:absolute;inset:-3px;border-radius:50%;border:2px solid var(--c);animation:ring 2.6s ease-out infinite}
+.fm.is-old .fm-av{filter:saturate(.2) brightness(1.05)}
+.fm.is-sel .fm-av{transform:scale(1.14)}
+.fm-tag{display:flex;flex-direction:column;align-items:center;padding:4px 9px 5px;border-radius:10px;background:var(--tag-bg);color:var(--tag-ink);line-height:1.18;white-space:nowrap;box-shadow:0 3px 10px rgba(10,16,40,.22)}
+.fm-tag b{font-size:12.5px;font-weight:600;max-width:120px;overflow:hidden;text-overflow:ellipsis}
+.fm-tag small{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--tag-mute);font-variant-numeric:tabular-nums}
+.fm.is-live .fm-tag small{color:var(--tag-ink)}
+.fm.is-live .fm-tag small::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--live)}
+@keyframes ring{0%{transform:scale(1);opacity:.75}100%{transform:scale(1.55);opacity:0}}
+
+.me{position:absolute;left:0;top:0;width:20px;height:20px;transform:translate(-50%,-50%);border-radius:50%;background:var(--c,var(--accent));border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.32)}
+.me::before{content:"";position:absolute;inset:-11px;border-radius:50%;background:var(--c,var(--accent));opacity:0;animation:halo 2.4s ease-out infinite;z-index:-1}
+.me.ghost{background:#9AA0AB}
+.me.ghost::before{display:none}
+@keyframes halo{0%{transform:scale(.5);opacity:.35}100%{transform:scale(1.5);opacity:0}}
+
+/* ---------- Floating buttons ---------- */
+.fabs{position:fixed;right:12px;z-index:20;display:flex;flex-direction:column;gap:10px;transition:opacity .2s ease}
+.fabs.top{top:calc(var(--sat) + 10px)}
+.fabs.side{bottom:220px;transition:bottom .38s cubic-bezier(.2,.8,.2,1),opacity .2s ease}
+.fabs.gone{opacity:0;pointer-events:none}
+.fab{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:var(--surface);-webkit-backdrop-filter:blur(18px) saturate(1.5);backdrop-filter:blur(18px) saturate(1.5);box-shadow:var(--float-shadow);color:var(--ink)}
+.fab:active{transform:scale(.94)}
+.fab.on{color:var(--accent)}
+.chip{position:fixed;left:50%;top:calc(var(--sat) + 12px);transform:translateX(-50%);z-index:21;display:flex;align-items:center;gap:7px;max-width:calc(100% - 140px);padding:8px 13px;border-radius:999px;background:var(--surface);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);box-shadow:var(--float-shadow);font-size:13px;font-weight:600}
+.chip svg.i{width:17px;height:17px}
+.banner{position:fixed;left:12px;right:70px;top:calc(var(--sat) + 10px);z-index:22;padding:10px 13px;border-radius:14px;background:var(--tag-bg);color:var(--tag-ink);font-size:13px;line-height:1.35;box-shadow:var(--float-shadow)}
+.banner:not([hidden]) + .chip{display:none}
+
+/* ---------- Bottom sheet ---------- */
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:30;height:var(--sheet-h,70vh);display:flex;flex-direction:column;background:var(--surface);-webkit-backdrop-filter:blur(26px) saturate(1.5);backdrop-filter:blur(26px) saturate(1.5);border-radius:26px 26px 0 0;box-shadow:0 -4px 28px rgba(16,22,48,.14);transform:translateY(var(--sheet-y,60vh));transition:transform .4s cubic-bezier(.2,.85,.25,1)}
+.sheet.no-anim{transition:none}
+.grab{flex:none;height:22px;display:grid;place-items:center;touch-action:none;cursor:grab}
+.grab span{width:38px;height:5px;border-radius:3px;background:var(--line);background:color-mix(in srgb,var(--ink) 18%,transparent)}
+.sheet-body{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-bottom:var(--sab)}
+.sheet[data-state="peek"] .sheet-body{overflow:hidden}
+.list-head{display:flex;align-items:baseline;gap:8px;padding:2px 20px 10px;touch-action:none}
+.list-head h2{font-size:22px;font-weight:650;letter-spacing:-.015em}
+.list-head .count{font-size:15px;color:var(--mute);font-variant-numeric:tabular-nums}
+.people{list-style:none;padding:0 8px 12px}
+.person{display:flex;align-items:center;gap:13px;padding:9px 12px;border-radius:16px;cursor:pointer}
+.person:active{background:var(--line)}
+.person + .person{position:relative}
+.person + .person::before{content:"";position:absolute;left:69px;right:12px;top:0;height:1px;background:var(--line)}
+.av{position:relative;flex:none;width:44px;height:44px;border-radius:50%;background:var(--c);color:#fff;display:grid;place-items:center;font-size:17px;font-weight:650}
+.person.is-live .av::after{content:"";position:absolute;right:-1px;bottom:-1px;width:13px;height:13px;border-radius:50%;background:var(--live);border:2.5px solid var(--solid)}
+.person.is-off .av{filter:saturate(.25)}
+.av.me-av{background:transparent;border:2px solid var(--c);color:var(--c)}
+.pmain{flex:1;min-width:0;display:flex;flex-direction:column}
+.pmain b{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pmain small{font-size:13.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.person.is-live .pmain small{color:var(--live);font-weight:600}
+.pdist{flex:none;font-size:14px;color:var(--mute);font-variant-numeric:tabular-nums}
+.empty{margin:6px 12px 0;padding:18px;border-radius:18px;border:1.5px dashed var(--line);border-color:color-mix(in srgb,var(--ink) 16%,transparent)}
+.empty p{color:var(--mute);margin:4px 0 14px;font-size:14px}
+.empty b{font-size:16px;font-weight:600}
+
+/* Detail */
+.detail{padding:0 20px 18px}
+.d-head{display:flex;align-items:center;gap:14px;padding:2px 0 14px;touch-action:none}
+.d-head .av{width:56px;height:56px;font-size:22px}
+.d-head div{flex:1;min-width:0}
+.d-head h2{font-size:22px;font-weight:650;letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.d-head p{color:var(--mute);font-size:14px}
+.d-head p.live{color:var(--live);font-weight:600}
+.icon-btn{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--field);color:var(--mute)}
+.icon-btn svg.i{width:17px;height:17px;stroke-width:2.2}
+.d-addr{font-size:15px;margin-bottom:12px;min-height:21px}
+.d-facts{display:grid;grid-template-columns:repeat(3,1fr);border-radius:16px;background:var(--field);margin-bottom:14px}
+.d-facts div{padding:11px 12px}
+.d-facts div + div{border-left:1px solid var(--line)}
+.d-facts dt{font-size:12px;color:var(--mute)}
+.d-facts dd{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.d-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{height:48px;padding:0 18px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--field);font-weight:600;font-size:15.5px;color:var(--ink)}
+.btn:active{transform:scale(.98)}
+.btn.primary{background:var(--accent);color:var(--accent-ink)}
+.btn[disabled],.btn.disabled{opacity:.4;pointer-events:none}
+.btn.wide{width:100%}
+.btn svg.i{width:19px;height:19px}
+.link{display:block;margin:14px auto 0;padding:8px 12px;font-size:15px;font-weight:600;color:var(--mute)}
+.link.danger{color:var(--danger)}
+
+/* ---------- Modals ---------- */
+.modal{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;background:rgba(8,10,22,0);transition:background .25s ease}
+.modal.open{background:rgba(8,10,22,.40)}
+.modal-card{width:100%;max-width:520px;max-height:calc(100% - var(--sat) - 24px);overflow-y:auto;overscroll-behavior:contain;background:var(--solid);border-radius:26px 26px 0 0;padding:8px 20px calc(22px + var(--sab));transform:translateY(100%);transition:transform .32s cubic-bezier(.2,.85,.25,1)}
+.modal.open .modal-card{transform:none}
+.m-head{display:flex;align-items:center;justify-content:space-between;padding:12px 0 14px}
+.m-head h2{font-size:22px;font-weight:650;letter-spacing:-.015em}
+.qr{width:min(220px,62vw);aspect-ratio:1;margin:4px auto 0;padding:12px;border-radius:20px;background:#fff;box-shadow:0 0 0 1px var(--line)}
+.qr svg{display:block;width:100%;height:100%}
+.code{text-align:center;font-size:30px;font-weight:650;letter-spacing:.08em;font-variant-numeric:tabular-nums;margin:12px 0 2px;-webkit-user-select:text;user-select:text}
+.hint{text-align:center;color:var(--mute);font-size:14px;max-width:34ch;margin:4px auto 16px}
+.row{display:flex;gap:10px}
+.row > *{flex:1}
+.sep{height:1px;background:var(--line);margin:22px 0 18px}
+.lbl{display:block;font-size:14px;font-weight:600;margin-bottom:8px}
+.field{width:100%;height:50px;padding:0 14px;border-radius:14px;border:1.5px solid transparent;background:var(--field);font-size:17px;outline:none}
+.field:focus{border-color:var(--accent)}
+.field.code-in{letter-spacing:.1em;font-weight:600;text-transform:uppercase}
+.row .field{flex:1.6}
+.set-group{margin-bottom:22px}
+.set-row{display:flex;align-items:center;gap:14px;padding:12px 0}
+.set-row + .set-row{border-top:1px solid var(--line)}
+.set-row div{flex:1;min-width:0}
+.set-row b{display:block;font-weight:600;font-size:16px}
+.set-row small{display:block;color:var(--mute);font-size:13.5px}
+.switch{position:relative;flex:none;width:52px;height:32px}
+.switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+.switch span{position:absolute;inset:0;border-radius:999px;background:var(--field);box-shadow:inset 0 0 0 1px var(--line);transition:background .2s}
+.switch span::after{content:"";position:absolute;left:3px;top:3px;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.25);transition:transform .22s cubic-bezier(.3,.9,.3,1)}
+.switch input:checked + span{background:var(--accent)}
+.switch input:checked + span::after{transform:translateX(20px)}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);padding:3px;border-radius:13px;background:var(--field)}
+.seg button{height:38px;border-radius:10px;font-size:14.5px;font-weight:600;color:var(--mute)}
+.seg button[aria-pressed="true"]{background:var(--solid);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.swatches{display:flex;justify-content:space-between;gap:6px;max-width:400px}
+.sw{flex:none;width:clamp(28px,8.6vw,36px);height:clamp(28px,8.6vw,36px);border-radius:50%;background:var(--c);box-shadow:0 0 0 0 var(--solid),0 0 0 0 var(--c);transition:box-shadow .15s}
+.sw[aria-pressed="true"]{box-shadow:0 0 0 3px var(--solid),0 0 0 5px var(--c)}
+.version{text-align:center;color:var(--mute);font-size:13px;margin-top:6px}
+
+/* ---------- Scanner ---------- */
+.scanner{position:fixed;inset:0;z-index:80;background:#000;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.scanner video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.scanner .frame{position:relative;width:min(68vw,280px);aspect-ratio:1;border-radius:28px;box-shadow:0 0 0 100vmax rgba(0,0,0,.5);border:3px solid rgba(255,255,255,.9)}
+.scanner p{position:relative;margin-top:22px;font-size:15px;font-weight:600;text-align:center;padding:0 30px}
+.scanner .close{position:absolute;top:calc(var(--sat) + 14px);right:14px;width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.18);color:#fff;display:grid;place-items:center}
+
+/* ---------- Full screens (onboarding, install, setup) ---------- */
+.screen{position:fixed;inset:0;z-index:50;background:var(--solid);overflow-y:auto;padding:calc(var(--sat) + 28px) 24px calc(var(--sab) + 24px)}
+.ob-step{min-height:100%;display:flex;flex-direction:column;max-width:440px;margin:0 auto}
+.ob-title{font-size:34px;line-height:1.08;font-weight:650;letter-spacing:-.03em;margin:8px 0 14px}
+.ob-text{font-size:16.5px;color:var(--mute);line-height:1.5;margin-bottom:22px;max-width:38ch}
+.ob-label{font-size:14px;font-weight:600;margin:26px 0 12px}
+.ob-av{width:84px;height:84px;border-radius:50%;background:var(--c,#2D5BFF);color:#fff;display:grid;place-items:center;font-size:34px;font-weight:650;margin:18px 0 10px;transition:background .2s}
+.ob-foot{margin-top:auto;padding-top:28px;display:flex;flex-direction:column;gap:10px}
+.err{color:var(--danger);font-size:14px;margin-top:14px}
+.ob-illu{position:relative;height:210px;border-radius:24px;overflow:hidden;margin-bottom:8px;background:
+  linear-gradient(90deg,var(--line) 1px,transparent 1px) 0 0/34px 34px,
+  linear-gradient(var(--line) 1px,transparent 1px) 0 0/34px 34px,var(--field)}
+.ob-illu .road{position:absolute;left:-10%;right:-10%;top:58%;height:16px;background:var(--solid);transform:rotate(-12deg);opacity:.9}
+.ob-illu .road.b{top:-10%;bottom:-10%;left:62%;right:auto;width:12px;height:auto;transform:rotate(8deg)}
+.ob-illu .pin{position:absolute;left:38%;top:44%}
+.ob-illu .pin .fm{position:absolute}
+.ins-wrap{max-width:440px;margin:0 auto}
+.ins-icon{width:72px;height:72px;border-radius:17px;display:block;margin:10px 0 18px;box-shadow:0 4px 16px rgba(16,22,48,.2)}
+.steps{list-style:none;counter-reset:s;margin:6px 0 24px}
+.steps li{counter-increment:s;display:flex;gap:14px;align-items:baseline;padding:12px 0;font-size:16.5px;border-top:1px solid var(--line)}
+.steps li::before{content:counter(s);flex:none;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-size:14px;font-weight:650;display:grid;place-items:center;transform:translateY(5px)}
+.ins-code{padding:16px;border-radius:18px;background:var(--field);margin-bottom:10px}
+.ins-code p:first-child{color:var(--mute);font-size:14.5px}
+.ins-code .code{text-align:left;margin:4px 0 0}
+
+/* ---------- Splash and toast ---------- */
+.splash{position:fixed;inset:0;z-index:100;background:#2D5BFF;display:grid;place-items:center;transition:opacity .4s ease}
+.splash.out{opacity:0;pointer-events:none}
+.splash .dots{position:relative;width:120px;height:120px}
+.splash .dots i{position:absolute;width:34px;height:34px;border-radius:50%}
+.splash .dots .a{background:#fff;left:28px;top:58px;animation:dotA .8s cubic-bezier(.2,.9,.25,1) both}
+.splash .dots .b{border:6px solid #fff;left:58px;top:28px;animation:dotB .8s cubic-bezier(.2,.9,.25,1) both}
+@keyframes dotA{from{transform:translate(-40px,40px);opacity:0}to{transform:none;opacity:1}}
+@keyframes dotB{from{transform:translate(40px,-40px);opacity:0}to{transform:none;opacity:1}}
+.toast{position:fixed;left:50%;top:calc(var(--sat) + 12px);z-index:120;max-width:calc(100% - 32px);padding:11px 16px;border-radius:14px;background:var(--tag-bg);color:var(--tag-ink);font-size:14.5px;font-weight:600;box-shadow:var(--float-shadow);opacity:0;transform:translate(-50%,calc(-100% - 30px));transition:transform .32s cubic-bezier(.2,.85,.25,1),opacity .2s ease;pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.err{background:var(--danger);color:#fff}
+
+/* ---------- Wide screens: side panel ---------- */
+@media (min-width:760px){
+  .sheet{left:16px;right:auto;top:calc(var(--sat) + 16px);bottom:16px;width:380px;height:auto;border-radius:24px;transform:none!important;box-shadow:var(--float-shadow)}
+  .grab{display:none}
+  .list-head{padding-top:18px}
+  .sheet[data-state="peek"] .sheet-body{overflow-y:auto}
+  .fabs.side{bottom:24px!important}
+  .fabs.gone{opacity:1;pointer-events:auto}
+  .modal{align-items:center}
+  .modal-card{border-radius:26px;padding-bottom:22px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<div class="probe" id="sabProbe"></div>
+<div class="probe" id="satProbe"></div>
+
+<!-- Main app -->
+<div id="app" hidden>
+  <div id="map"></div>
+  <div class="scrim"></div>
+
+  <div class="fabs top">
+    <button class="fab" id="btnSettings" aria-label="Réglages">
+      <svg class="i" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+    </button>
+    <button class="fab" id="btnAdd" aria-label="Ajouter un proche">
+      <svg class="i" viewBox="0 0 24 24"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 19.5c.8-3.4 3.3-5.2 6.5-5.2s5.7 1.8 6.5 5.2"/><path d="M19 7.5v6M16 10.5h6"/></svg>
+    </button>
+  </div>
+
+  <div class="fabs side" id="sideFabs">
+    <button class="fab" id="btnFit" aria-label="Voir tout le monde">
+      <svg class="i" viewBox="0 0 24 24"><path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/></svg>
+    </button>
+    <button class="fab" id="btnLocate" aria-label="Me centrer">
+      <svg class="i" viewBox="0 0 24 24"><path d="M20 4 4 10.8l6.6 2.6L13.2 20z"/></svg>
+    </button>
+  </div>
+
+  <div class="banner" id="banner" hidden></div>
+  <button class="chip" id="ghostChip" hidden>
+    <svg class="i" viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M10.6 5.1C11 5 11.5 5 12 5c5 0 8.5 4.5 9.5 7-.5 1.3-1.4 2.7-2.6 3.9M6.2 6.2C4.4 7.5 3.1 9.5 2.5 12c1 2.5 4.5 7 9.5 7 1.6 0 3.1-.5 4.4-1.2"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+    <span>Mode fantôme activé</span>
+  </button>
+
+  <section class="sheet" id="sheet" data-state="peek" aria-label="Mes proches">
+    <div class="grab" id="sheetGrab"><span></span></div>
+    <div class="sheet-body" id="sheetBody">
+      <div id="viewList">
+        <header class="list-head" id="listHead"><h2>Mes proches</h2><span class="count" id="count"></span></header>
+        <ul class="people" id="people"></ul>
+      </div>
+      <div id="viewDetail" class="detail" hidden>
+        <div class="d-head" id="detailHead">
+          <span class="av" id="dAv"></span>
+          <div><h2 id="dName"></h2><p id="dSub"></p></div>
+          <button class="icon-btn" id="dClose" aria-label="Fermer">
+            <svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
+        </div>
+        <p class="d-addr" id="dAddr"></p>
+        <dl class="d-facts" id="dFacts">
+          <div><dt>Distance</dt><dd id="dDist">–</dd></div>
+          <div><dt>Envoyée à</dt><dd id="dTime">–</dd></div>
+          <div><dt>Précision</dt><dd id="dAcc">–</dd></div>
+        </dl>
+        <div class="d-actions">
+          <a class="btn primary" id="dRoute" target="_blank" rel="noopener">
+            <svg class="i" viewBox="0 0 24 24"><path d="M5 20v-5.5A4.5 4.5 0 0 1 9.5 10H19"/><path d="M15 6l4 4-4 4"/></svg>Itinéraire
+          </a>
+          <button class="btn" id="dCenter">Centrer</button>
+        </div>
+        <button class="link danger" id="dRemove">Retirer de mes proches</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- Add a person -->
+<div class="modal" id="modalAdd" hidden>
+  <div class="modal-card" role="dialog" aria-labelledby="addTitle">
+    <div class="m-head"><h2 id="addTitle">Ajouter un proche</h2>
+      <button class="icon-btn" data-close aria-label="Fermer"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="qr" id="addQr"></div>
+    <p class="code" id="addCode"></p>
+    <p class="hint">Fais scanner ce code ou envoie-le. Une fois ajoutés, vous vous voyez tous les deux.</p>
+    <div class="row">
+      <button class="btn" id="btnCopy"><svg class="i" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path d="M15.5 8.5V6.5A2.5 2.5 0 0 0 13 4H6.5A2.5 2.5 0 0 0 4 6.5V13a2.5 2.5 0 0 0 2.5 2.5h2"/></svg>Copier</button>
+      <button class="btn" id="btnShare"><svg class="i" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Partager</button>
+    </div>
+    <div class="sep"></div>
+    <label class="lbl" for="inCode">Code d'un proche</label>
+    <div class="row">
+      <input class="field code-in" id="inCode" maxlength="7" inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" placeholder="ABC 123" enterkeyhint="go">
+      <button class="btn primary" id="btnAddCode">Ajouter</button>
+    </div>
+    <button class="btn wide" id="btnScan" style="margin-top:10px">
+      <svg class="i" viewBox="0 0 24 24"><path d="M4 8.5V5.5A1.5 1.5 0 0 1 5.5 4h3M15.5 4h3A1.5 1.5 0 0 1 20 5.5v3M20 15.5v3a1.5 1.5 0 0 1-1.5 1.5h-3M8.5 20h-3A1.5 1.5 0 0 1 4 18.5v-3M4 12h16"/></svg>Scanner un QR code
+    </button>
+  </div>
+</div>
+
+<!-- Settings -->
+<div class="modal" id="modalSettings" hidden>
+  <div class="modal-card" role="dialog" aria-labelledby="setTitle">
+    <div class="m-head"><h2 id="setTitle">Réglages</h2>
+      <button class="icon-btn" data-close aria-label="Fermer"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="set-group">
+      <label class="lbl" for="setName">Ton nom</label>
+      <div class="row">
+        <input class="field" id="setName" maxlength="24" autocomplete="off" enterkeyhint="done">
+        <button class="btn primary" id="setNameSave" hidden>Enregistrer</button>
+      </div>
+    </div>
+    <div class="set-group">
+      <span class="lbl">Ta couleur sur la carte</span>
+      <div class="swatches" id="setSwatches"></div>
+    </div>
+    <div class="set-group">
+      <div class="set-row">
+        <div><b>Mode fantôme</b><small>Ta position est masquée pour tous tes proches.</small></div>
+        <label class="switch"><input type="checkbox" id="setGhost" aria-label="Mode fantôme"><span></span></label>
+      </div>
+      <div class="set-row">
+        <div><b>Mon code</b><small id="setCode"></small></div>
+        <button class="btn" id="setShowCode">Afficher</button>
+      </div>
+    </div>
+    <div class="set-group">
+      <span class="lbl">Thème</span>
+      <div class="seg" id="setTheme">
+        <button data-theme="auto" aria-pressed="false">Auto</button>
+        <button data-theme="light" aria-pressed="false">Clair</button>
+        <button data-theme="dark" aria-pressed="false">Sombre</button>
+      </div>
+    </div>
+    <button class="link danger" id="setDelete">Supprimer mon compte</button>
+    <p class="version" id="version"></p>
+  </div>
+</div>
+
+<!-- QR scanner -->
+<div class="scanner" id="scanner" hidden>
+  <video id="scanVideo" playsinline muted autoplay></video>
+  <div class="frame"></div>
+  <p id="scanMsg">Vise le QR code d'un proche</p>
+  <button class="close" id="scanClose" aria-label="Fermer"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+</div>
+
+<!-- Onboarding -->
+<div class="screen" id="onboard" hidden>
+  <section class="ob-step" data-step="1">
+    <div class="ob-av" id="obAv">?</div>
+    <h1 class="ob-title">Comment tes proches t'appellent&#8239;?</h1>
+    <input class="field" id="obName" maxlength="24" autocomplete="given-name" placeholder="Ton prénom" enterkeyhint="next">
+    <p class="ob-label">Ta couleur sur la carte</p>
+    <div class="swatches" id="obSwatches"></div>
+    <p class="err" id="obErr" hidden></p>
+    <div class="ob-foot"><button class="btn primary wide" id="obNext">Continuer</button></div>
+  </section>
+  <section class="ob-step" data-step="2" hidden>
+    <h1 class="ob-title">Voici ton code</h1>
+    <p class="ob-text">Tes proches le scannent ou l'entrent dans leur app. Dès qu'il est ajouté, vous vous voyez tous les deux sur la carte.</p>
+    <div class="qr" id="obQr"></div>
+    <p class="code" id="obCode"></p>
+    <div class="ob-foot">
+      <button class="btn wide" id="obShare">Partager mon code</button>
+      <button class="btn primary wide" id="obNext2">Continuer</button>
+    </div>
+  </section>
+  <section class="ob-step" data-step="3" hidden>
+    <h1 class="ob-title">Ta position</h1>
+    <p class="ob-text">PocketFind envoie ta position à tes proches seulement quand l'app est ouverte. Quand tu la fermes, ils voient ta dernière position et depuis combien de temps elle date.</p>
+    <div class="ob-illu" aria-hidden="true">
+      <div class="road"></div><div class="road b"></div>
+      <div class="pin"><div class="fm" id="obPin"><div class="fm-av"><span id="obPinInit"></span></div><div class="fm-tag"><b id="obPinName"></b><small>il y a 10 min</small></div></div></div>
+    </div>
+    <p class="err" id="obLocErr" hidden></p>
+    <div class="ob-foot">
+      <button class="btn primary wide" id="obLoc">Activer la localisation</button>
+      <button class="link" id="obSkip" style="margin-top:0">Plus tard</button>
+    </div>
+  </section>
+</div>
+
+<!-- Install hint (iPhone, opened in Safari) -->
+<div class="screen" id="install" hidden>
+  <div class="ins-wrap">
+    <img class="ins-icon" src="icon-180.png" alt="">
+    <h1 class="ob-title">Installe PocketFind sur ton iPhone</h1>
+    <ol class="steps">
+      <li><span>Ouvre le menu <b>Partager</b> de Safari (bouton Partager, ou « … » puis Partager).</span></li>
+      <li><span>Choisis <b>Sur l'écran d'accueil</b>.</span></li>
+      <li><span>Ouvre PocketFind depuis ton écran d'accueil.</span></li>
+    </ol>
+    <div class="ins-code" id="insCode" hidden>
+      <p>Puis ajoute ce code dans l'app&#8239;:</p>
+      <p class="code" id="insCodeVal"></p>
+    </div>
+    <button class="link" id="insSkip">Continuer dans Safari</button>
+  </div>
+</div>
+
+<!-- Missing configuration -->
+<div class="screen" id="setup" hidden>
+  <div class="ins-wrap">
+    <img class="ins-icon" src="icon-180.png" alt="">
+    <h1 class="ob-title">Il manque la configuration</h1>
+    <p class="ob-text" id="setupText">Ajoute l'URL et la clé de ton projet Supabase dans config.js, puis recharge la page.</p>
+  </div>
+</div>
+
+<div class="splash" id="splash" aria-hidden="true"><div class="dots"><i class="a"></i><i class="b"></i></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script>
+(() => {
+"use strict";
+
+/* ================= Constants ================= */
+const VERSION = "1.0";
+const CFG = window.POCKETFIND_CONFIG || {};
+const COLORS = ["#2D5BFF", "#E8590C", "#12925E", "#7C4DEB", "#D63A7A", "#B7791F", "#0E8A94", "#3F4450"];
+const LIVE_MS = 75 * 1000;            // "Maintenant" while the last position is this fresh
+const OLD_MS = 6 * 3600 * 1000;       // older than this: marker fades
+const HEARTBEAT_MS = 30 * 1000;       // resend while still, so friends see you as live
+const MIN_SEND_MS = 4 * 1000;         // never send more often than this
+const MOVE_M = 8;                     // send early if moved more than this
+const POLL_MS = 45 * 1000;            // safety refresh in case realtime drops
+const PEEK = 176;                     // visible height of the closed sheet
+const TILES = {
+  light: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+  dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+};
+const JSQR_URL = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js";
+
+/* ================= Helpers ================= */
+const $ = (s) => document.querySelector(s);
+const ls = {
+  get(k, d) { try { const v = localStorage.getItem("pf-" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("pf-" + k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem("pf-" + k); } catch {} }
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const initial = (name) => ([...String(name || "").trim()][0] || "?").toUpperCase();
+const visible = () => document.visibilityState === "visible";
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isStandalone = navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
+const isWide = () => innerWidth >= 760;
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+
+function cleanCode(raw) { return String(raw || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+function extractCode(text) {
+  try { const u = new URL(text); const c = u.searchParams.get("add"); if (c) return cleanCode(c); } catch {}
+  return cleanCode(text);
+}
+const fmtCode = (c) => c ? c.slice(0, 3) + " " + c.slice(3) : "";
+const shareUrl = (c) => location.origin + location.pathname + "?add=" + c;
+
+function distM(a, b) {
+  const R = 6371000, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+function fmtDist(m) {
+  if (m < 995) return Math.max(10, Math.round(m / 10) * 10) + " m";
+  if (m < 10000) return (m / 1000).toFixed(1).replace(".", ",") + " km";
+  return Math.round(m / 1000).toLocaleString("fr-CH").replace(/\u2019|'/g, "\u202F") + " km";
+}
+const fmtAcc = (m) => m >= 1000 ? (m / 1000).toFixed(1).replace(".", ",") + " km" : Math.round(m) + " m";
+
+function ago(ms) {
+  const s = (Date.now() - ms) / 1000;
+  if (s < LIVE_MS / 1000) return "Maintenant";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `il y a ${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 3) return `il y a ${h} h ${String(m % 60).padStart(2, "0")}`;
+  if (h < 24) return `il y a ${h} h`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? "il y a 1 jour" : `il y a ${d} jours`;
+}
+function clock(ms) {
+  const d = new Date(ms), now = new Date();
+  const hm = d.toLocaleTimeString("fr-CH", { hour: "2-digit", minute: "2-digit" });
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (ms >= today) return hm;
+  if (ms >= today - 86400000) return "hier " + hm;
+  return d.toLocaleDateString("fr-CH", { day: "numeric", month: "numeric" }) + " " + hm;
+}
+const tsOf = (loc) => Date.parse(loc.updated_at);
+const hasLoc = (f) => !!(f.loc && !f.loc.ghost && f.loc.lat != null && f.loc.lng != null);
+const isLive = (f) => hasLoc(f) && Date.now() - tsOf(f.loc) < LIVE_MS;
+
+function qrSVG(text) {
+  if (typeof window.qrcode !== "function") return `<svg viewBox="0 0 10 10"></svg>`;
+  const qr = window.qrcode(0, "M");
+  qr.addData(text);
+  qr.make();
+  const n = qr.getModuleCount();
+  let d = "";
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
+  return `<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges" role="img" aria-label="QR code"><path d="${d}" fill="#15171C"/></svg>`;
+}
+
+function errText(e) {
+  const m = (e && (e.message || e.error_description || e.msg)) || String(e || "");
+  if (/code_not_found/.test(m)) return "Aucun compte avec ce code. Vérifie les 6 caractères.";
+  if (/own_code/.test(m)) return "C'est ton propre code.";
+  if (/anonymous/i.test(m)) return "Les connexions anonymes sont désactivées dans Supabase (Authentication). Active-les, puis réessaie.";
+  if (/fetch|network|load failed/i.test(m)) return "Pas de connexion. Vérifie ton réseau et réessaie.";
+  return m || "L'opération a échoué. Réessaie.";
+}
+
+let toastTimer;
+function toast(msg, kind) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = "toast show" + (kind ? " " + kind : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = "toast" + (kind ? " " + kind : ""); }, 2800);
+}
+
+// Light haptic tick: vibrate where supported, iOS switch-input trick otherwise.
+const haptic = (() => {
+  let label = null;
+  return () => {
+    try {
+      if (navigator.vibrate) { navigator.vibrate(8); return; }
+      if (!label) {
+        label = document.createElement("label");
+        label.setAttribute("aria-hidden", "true");
+        label.style.cssText = "position:fixed;left:-100px;top:0;width:1px;height:1px;overflow:hidden;opacity:0";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.setAttribute("switch", "");
+        label.appendChild(input);
+        document.body.appendChild(label);
+      }
+      label.click();
+    } catch {}
+  };
+})();
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = res; s.onerror = () => rej(new Error("load failed"));
+    document.head.appendChild(s);
+  });
+}
+
+/* ================= State ================= */
+let sb = null, me = null, map = null, tileLayer = null, tileTheme = null;
+let meMarker = null, accCircle = null, channel = null;
+let myPos = null, watchId = null, locError = null, ghost = false;
+let lastSent = { t: 0, lat: null, lng: null }, sending = false, sendFails = 0;
+const friends = new Map();
+const justAdded = new Set();
+let friendsLoadedOnce = false, loadingFriends = false;
+let detailId = null, sheetMode = "list", sheetState = "peek", sheetH = 0, sheetY = 0;
+let userMovedMap = false, mainStarted = false, pendingCode = null;
+let pickedColor = COLORS[0];
+
+/* ================= Theme ================= */
+const mqDark = matchMedia("(prefers-color-scheme: dark)");
+const themeSetting = () => ls.get("theme", "auto");
+const resolvedTheme = () => themeSetting() === "auto" ? (mqDark.matches ? "dark" : "light") : themeSetting();
+function applyTheme() {
+  const t = resolvedTheme();
+  document.documentElement.dataset.theme = t;
+  if (map) setTiles(t);
+}
+mqDark.addEventListener && mqDark.addEventListener("change", applyTheme);
+function setTiles(t) {
+  if (tileTheme === t) return;
+  tileTheme = t;
+  if (tileLayer) map.removeLayer(tileLayer);
+  tileLayer = L.tileLayer(TILES[t], { subdomains: "abcd", maxZoom: 20, attribution: "© OpenStreetMap © CARTO" }).addTo(map);
+}
+
+/* ================= Screens ================= */
+function showScreen(id) {
+  ["onboard", "install", "setup"].forEach((s) => { $("#" + s).hidden = s !== id; });
+}
+const splashStart = performance.now();
+function hideSplash() {
+  const s = $("#splash");
+  if (!s) return;
+  const wait = Math.max(0, 800 - (performance.now() - splashStart));
+  setTimeout(() => { s.classList.add("out"); setTimeout(() => s.remove(), 450); }, wait);
+}
+
+/* ================= Boot ================= */
+async function boot() {
+  applyTheme();
+  $("#version").textContent = "PocketFind v" + VERSION;
+
+  const params = new URLSearchParams(location.search);
+  if (params.get("add")) {
+    pendingCode = cleanCode(params.get("add"));
+    history.replaceState(null, "", location.pathname);
+  }
+
+  const url = String(CFG.SUPABASE_URL || ""), key = String(CFG.SUPABASE_ANON_KEY || "");
+  if (!url || !key || url.includes("YOUR-PROJECT") || key.includes("YOUR-")) {
+    showScreen("setup"); hideSplash(); return;
+  }
+  if (!window.L || !window.supabase || !window.supabase.createClient) {
+    $("#setupText").textContent = "Les bibliothèques de l'app n'ont pas pu se charger. Vérifie ta connexion, puis rouvre PocketFind.";
+    $("#setup .ob-title").textContent = "Pas de connexion";
+    showScreen("setup"); hideSplash(); return;
+  }
+
+  sb = window.supabase.createClient(url, key, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: "pf-auth" }
+  });
+
+  if (isIOS && !isStandalone && !ls.get("skip-install", false)) {
+    if (pendingCode) { $("#insCode").hidden = false; $("#insCodeVal").textContent = fmtCode(pendingCode); }
+    showScreen("install"); hideSplash(); return;
+  }
+  await enter();
+}
+
+async function enter() {
+  const cached = ls.get("me", null);
+  let session = null;
+  try { session = (await sb.auth.getSession()).data.session; } catch {}
+
+  if (session) {
+    const { data, error } = await sb.from("pf_profiles").select("*").eq("id", session.user.id).maybeSingle();
+    if (data) { me = data; ls.set("me", me); startMain(); hideSplash(); return; }
+    if (error && cached && cached.id === session.user.id) { me = cached; startMain(); hideSplash(); return; }
+  }
+  showOnboarding(); hideSplash();
+}
+
+/* ================= Onboarding ================= */
+function goStep(n) {
+  document.querySelectorAll("#onboard .ob-step").forEach((s) => { s.hidden = s.dataset.step !== String(n); });
+  $("#onboard").scrollTop = 0;
+}
+function paintObAvatar() {
+  const name = $("#obName").value;
+  $("#obAv").textContent = initial(name);
+  $("#obAv").style.setProperty("--c", pickedColor);
+}
+function renderSwatches(box, current, onPick) {
+  box.innerHTML = "";
+  COLORS.forEach((c) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "sw";
+    b.style.setProperty("--c", c);
+    b.setAttribute("aria-label", "Couleur " + c);
+    b.setAttribute("aria-pressed", String(c.toLowerCase() === String(current).toLowerCase()));
+    b.addEventListener("click", () => {
+      haptic();
+      box.querySelectorAll(".sw").forEach((x) => x.setAttribute("aria-pressed", "false"));
+      b.setAttribute("aria-pressed", "true");
+      onPick(c);
+    });
+    box.appendChild(b);
+  });
+}
+function showOnboarding() {
+  showScreen("onboard");
+  goStep(1);
+  const cached = ls.get("me", null);
+  if (cached && cached.name) $("#obName").value = cached.name;
+  if (cached && cached.color) pickedColor = cached.color;
+  renderSwatches($("#obSwatches"), pickedColor, (c) => { pickedColor = c; paintObAvatar(); });
+  paintObAvatar();
+  $("#obName").addEventListener("input", paintObAvatar);
+  $("#obName").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#obNext").click(); });
+  $("#obNext").onclick = submitName;
+  $("#obShare").onclick = () => shareCode();
+  $("#obNext2").onclick = () => {
+    haptic();
+    $("#obPin").style.setProperty("--c", me.color);
+    $("#obPinInit").textContent = initial(me.name);
+    $("#obPinName").textContent = me.name;
+    goStep(3);
+  };
+  $("#obLoc").onclick = askLocation;
+  $("#obSkip").onclick = () => { ls.set("onboarded", true); startMain(); };
+}
+async function submitName() {
+  const name = $("#obName").value.trim();
+  const err = $("#obErr");
+  err.hidden = true;
+  if (!name) { err.textContent = "Entre ton prénom pour continuer."; err.hidden = false; $("#obName").focus(); return; }
+  const btn = $("#obNext");
+  btn.disabled = true; btn.textContent = "Création de ton compte…";
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) {
+      const { error } = await sb.auth.signInAnonymously();
+      if (error) throw error;
+    }
+    const { data, error } = await sb.rpc("pf_create_profile", { p_name: name, p_color: pickedColor });
+    if (error) throw error;
+    me = data;
+    ls.set("me", me);
+    haptic();
+    $("#obQr").innerHTML = qrSVG(shareUrl(me.code));
+    $("#obCode").textContent = fmtCode(me.code);
+    $("#obName").blur();
+    goStep(2);
+  } catch (e) {
+    err.textContent = errText(e); err.hidden = false;
+  } finally {
+    btn.disabled = false; btn.textContent = "Continuer";
+  }
+}
+function askLocation() {
+  const btn = $("#obLoc");
+  if (!("geolocation" in navigator)) { ls.set("onboarded", true); startMain(); return; }
+  btn.disabled = true; btn.textContent = "Localisation…";
+  navigator.geolocation.getCurrentPosition(
+    (p) => { ls.set("onboarded", true); onPos(p); startMain(); },
+    () => { ls.set("onboarded", true); startMain(); },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+  );
+}
+
+/* ================= Main ================= */
+function startMain() {
+  if (mainStarted) return;
+  mainStarted = true;
+  showScreen(null);
+  $("#app").hidden = false;
+
+  initMap();
+  initSheet();
+  bindUI();
+  renderList();
+  paintMe();
+
+  loadOwnRow().finally(() => startWatch());
+  loadFriends();
+  subscribe();
+
+  setInterval(() => { if (visible()) tickTimes(); }, 15000);
+  setInterval(() => { if (visible()) sendPos(false); }, 10000);
+  setInterval(() => { if (visible()) loadFriends(); }, POLL_MS);
+  document.addEventListener("visibilitychange", onVisibility);
+  addEventListener("pageshow", onVisibility);
+
+  if (pendingCode) {
+    const c = pendingCode; pendingCode = null;
+    if (c !== me.code) setTimeout(() => addByCode(c), 600);
+  }
+}
+
+function onVisibility() {
+  if (visible()) {
+    startWatch();
+    loadFriends();
+    if (!channel || (channel.state !== "joined" && channel.state !== "joining")) subscribe();
+    tickTimes();
+  } else {
+    stopWatch();
+  }
+}
+
+/* ================= Map ================= */
+function safeTop() { return $("#satProbe").offsetHeight; }
+function safeBottom() { return $("#sabProbe").offsetHeight; }
+
+function initMap() {
+  const view = ls.get("view", { c: [46.8, 8.23], z: 8 });
+  map = L.map("map", { zoomControl: false, attributionControl: false, maxZoom: 19, zoomSnap: 0.25, worldCopyJump: true })
+    .setView(view.c, view.z);
+  L.control.attribution({ position: "topleft", prefix: false }).addTo(map);
+  setTiles(resolvedTheme());
+
+  map.on("moveend", () => { const c = map.getCenter(); ls.set("view", { c: [c.lat, c.lng], z: map.getZoom() }); });
+  map.on("zoomend", declutter);
+  const el = map.getContainer();
+  ["touchstart", "wheel", "mousedown"].forEach((ev) => el.addEventListener(ev, () => { userMovedMap = true; }, { passive: true }));
+  map.on("click", () => { if (sheetMode === "detail") closeDetail(); });
+}
+
+function framePadding() {
+  if (isWide()) return { paddingTopLeft: [420, 70], paddingBottomRight: [80, 60] };
+  return { paddingTopLeft: [44, safeTop() + 80], paddingBottomRight: [70, visibleSheet() + 70] };
+}
+function focusOn(ll, zoom) {
+  map.flyToBounds(L.latLngBounds([ll, ll]), Object.assign(framePadding(), { maxZoom: zoom, duration: reduceMotion.matches ? 0 : 0.7 }));
+}
+function fitAll() {
+  const pts = [];
+  if (myPos) pts.push([myPos.lat, myPos.lng]);
+  friends.forEach((f) => { if (hasLoc(f)) pts.push([f.loc.lat, f.loc.lng]); });
+  if (!pts.length) return false;
+  map.flyToBounds(L.latLngBounds(pts), Object.assign(framePadding(), { maxZoom: pts.length === 1 ? 15 : 16, duration: reduceMotion.matches ? 0 : 0.8 }));
+  return true;
+}
+function frameInitial() { if (!userMovedMap) fitAll(); }
+
+function paintMe() {
+  if (!map || !me) return;
+  if (myPos) {
+    const ll = [myPos.lat, myPos.lng];
+    if (!meMarker) {
+      accCircle = L.circle(ll, { radius: myPos.acc, stroke: false, fillOpacity: 0.1, interactive: false }).addTo(map);
+      meMarker = L.marker(ll, {
+        icon: L.divIcon({ className: "me-wrap", html: '<div class="me"></div>', iconSize: [0, 0], iconAnchor: [0, 0] }),
+        keyboard: false, zIndexOffset: -200
+      }).addTo(map);
+      meMarker.on("click", () => { haptic(); focusOn([myPos.lat, myPos.lng], Math.max(map.getZoom(), 16)); });
+    } else {
+      meMarker.setLatLng(ll);
+      accCircle.setLatLng(ll).setRadius(myPos.acc);
+    }
+    accCircle.setStyle({ fillColor: me.color });
+    const dot = meMarker.getElement() && meMarker.getElement().querySelector(".me");
+    if (dot) { dot.style.setProperty("--c", me.color); dot.classList.toggle("ghost", ghost); }
+  }
+  $("#btnLocate").classList.toggle("on", !!myPos);
+}
+
+/* Friend markers */
+function markerHTML() {
+  return '<div class="fm"><div class="fm-av"><span></span></div><div class="fm-tag"><b></b><small></small></div></div>';
+}
+function paintMarker(f) {
+  if (!f.marker) return;
+  const root = f.marker.getElement();
+  const fm = root && root.querySelector(".fm");
+  if (!fm) return;
+  const t = tsOf(f.loc);
+  fm.style.setProperty("--c", f.color);
+  fm.querySelector(".fm-av span").textContent = initial(f.name);
+  fm.querySelector("b").textContent = f.name;
+  fm.querySelector("small").textContent = ago(t);
+  fm.classList.toggle("is-live", isLive(f));
+  fm.classList.toggle("is-old", Date.now() - t > OLD_MS);
+  fm.classList.toggle("is-sel", detailId === f.id);
+  f.marker.setZIndexOffset(detailId === f.id ? 1000 : 0);
+}
+function slideMarker(marker, to) {
+  const from = marker.getLatLng();
+  if (reduceMotion.matches || from.distanceTo(to) > 3000) { marker.setLatLng(to); declutter(); return; }
+  cancelAnimationFrame(marker._pfRaf);
+  const t0 = performance.now(), D = 900;
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / D), e = 1 - Math.pow(1 - k, 3);
+    marker.setLatLng([from.lat + (to[0] - from.lat) * e, from.lng + (to[1] - from.lng) * e]);
+    if (k < 1) marker._pfRaf = requestAnimationFrame(step); else declutter();
+  };
+  marker._pfRaf = requestAnimationFrame(step);
+}
+function updateMarker(f) {
+  if (!map) return;
+  if (!hasLoc(f)) {
+    if (f.marker) { map.removeLayer(f.marker); f.marker = null; }
+    return;
+  }
+  const ll = [f.loc.lat, f.loc.lng];
+  if (!f.marker) {
+    f.marker = L.marker(ll, {
+      icon: L.divIcon({ className: "fm-wrap", html: markerHTML(), iconSize: [0, 0], iconAnchor: [0, 0] }),
+      keyboard: false
+    }).addTo(map);
+    f.marker.on("click", (e) => { L.DomEvent.stopPropagation(e); openDetail(f.id); });
+  } else {
+    const cur = f.marker.getLatLng();
+    if (cur.lat !== ll[0] || cur.lng !== ll[1]) slideMarker(f.marker, ll);
+  }
+  paintMarker(f);
+}
+// Spread friends who stand at the same spot so every avatar stays tappable.
+function declutter() {
+  if (!map) return;
+  const items = [];
+  friends.forEach((f) => { if (f.marker) items.push({ f, p: map.latLngToLayerPoint(f.marker.getLatLng()) }); });
+  const groups = [];
+  for (const it of items) {
+    const g = groups.find((g) => g.some((o) => o.p.distanceTo(it.p) < 50));
+    if (g) g.push(it); else groups.push([it]);
+  }
+  for (const g of groups) {
+    g.sort((a, b) => a.p.x - b.p.x || a.f.id.localeCompare(b.f.id));
+    const n = g.length;
+    g.forEach((o, i) => {
+      const el = o.f.marker.getElement() && o.f.marker.getElement().querySelector(".fm");
+      if (el) el.style.setProperty("--dx", n > 1 ? ((i - (n - 1) / 2) * 86) + "px" : "0px");
+    });
+  }
+}
+
+/* ================= Location ================= */
+function startWatch() {
+  if (!("geolocation" in navigator)) { locError = "unsupported"; updateBanner(); return; }
+  if (watchId != null) return;
+  watchId = navigator.geolocation.watchPosition(onPos, onPosErr, { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
+}
+function stopWatch() {
+  if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+}
+function onPos(p) {
+  const first = !myPos;
+  myPos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy || 0 };
+  if (locError) { locError = null; updateBanner(); }
+  if (!mainStarted) return;
+  paintMe();
+  if (first) frameInitial();
+  sendPos(false);
+  renderList();
+  if (detailId) renderDetail();
+}
+function onPosErr(e) {
+  if (e.code === 1) { locError = "denied"; stopWatch(); }
+  else if (e.code === 2) locError = "unavailable";
+  updateBanner();
+  renderList();
+}
+async function sendPos(force) {
+  if (!me || !myPos || ghost || sending) return;
+  const now = Date.now();
+  const moved = lastSent.lat == null ? Infinity : distM(lastSent, myPos);
+  if (!force) {
+    if (now - lastSent.t < MIN_SEND_MS) return;
+    if (moved < MOVE_M && now - lastSent.t < HEARTBEAT_MS - 1000) return;
+  }
+  sending = true;
+  const pos = { ...myPos };
+  const { error } = await sb.from("pf_locations").upsert({
+    user_id: me.id, lat: pos.lat, lng: pos.lng, accuracy: Math.round(pos.acc), ghost: false
+  });
+  sending = false;
+  if (error) { sendFails++; }
+  else { sendFails = 0; lastSent = { t: now, lat: pos.lat, lng: pos.lng }; }
+  updateBanner();
+}
+async function loadOwnRow() {
+  ghost = ls.get("ghost", false);
+  try {
+    const { data, error } = await sb.from("pf_locations").select("ghost").eq("user_id", me.id).maybeSingle();
+    if (!error && data) ghost = !!data.ghost;
+  } catch {}
+  ls.set("ghost", ghost);
+  renderGhost();
+}
+async function setGhost(on) {
+  ghost = on;
+  ls.set("ghost", on);
+  renderGhost();
+  haptic();
+  let error = null;
+  if (on) {
+    ({ error } = await sb.from("pf_locations").upsert({ user_id: me.id, lat: null, lng: null, accuracy: null, ghost: true }));
+  } else if (myPos) {
+    lastSent.t = 0;
+    await sendPos(true);
+  } else {
+    ({ error } = await sb.from("pf_locations").upsert({ user_id: me.id, lat: null, lng: null, accuracy: null, ghost: false }));
+  }
+  if (error) toast(errText(error), "err");
+  else toast(on ? "Mode fantôme activé" : "Ta position est de nouveau partagée");
+}
+function renderGhost() {
+  $("#ghostChip").hidden = !ghost;
+  $("#setGhost").checked = ghost;
+  paintMe();
+  renderList();
+}
+function updateBanner() {
+  const b = $("#banner");
+  let msg = "";
+  if (locError === "denied") msg = "Localisation refusée. Autorise-la dans Réglages › Confidentialité et sécurité › Service de localisation › Sites web Safari, puis rouvre l'app.";
+  else if (locError === "unsupported") msg = "Cet appareil ne permet pas la localisation.";
+  else if (locError === "unavailable" && !myPos) msg = "Position introuvable pour l'instant. Réessai en cours.";
+  else if (sendFails >= 2 && !ghost) msg = "Ta position n'est pas envoyée. Vérifie ta connexion.";
+  b.textContent = msg;
+  b.hidden = !msg;
+}
+
+/* ================= Friends ================= */
+async function loadFriends() {
+  if (!me || loadingFriends) return;
+  loadingFriends = true;
+  try {
+    const { data: rows, error } = await sb.from("pf_friends").select("friend_id");
+    if (error) return;
+    const ids = rows.map((r) => r.friend_id);
+    for (const id of [...friends.keys()]) if (!ids.includes(id)) dropFriend(id);
+    if (ids.length) {
+      const [p, l] = await Promise.all([
+        sb.from("pf_profiles").select("id,name,color").in("id", ids),
+        sb.from("pf_locations").select("*").in("user_id", ids)
+      ]);
+      if (p.error || l.error) return;
+      for (const prof of p.data) {
+        let f = friends.get(prof.id);
+        if (!f) {
+          f = { id: prof.id, loc: null, marker: null };
+          friends.set(prof.id, f);
+          if (friendsLoadedOnce && !justAdded.has(prof.id)) toast(`${prof.name} fait maintenant partie de tes proches`);
+        }
+        f.name = prof.name;
+        f.color = prof.color;
+      }
+      for (const loc of l.data) { const f = friends.get(loc.user_id); if (f) f.loc = loc; }
+    }
+    friends.forEach(updateMarker);
+    declutter();
+    renderList();
+    if (detailId) renderDetail();
+    if (!friendsLoadedOnce) { friendsLoadedOnce = true; frameInitial(); }
+  } catch {
+  } finally {
+    loadingFriends = false;
+  }
+}
+function dropFriend(id) {
+  const f = friends.get(id);
+  if (!f) return;
+  if (f.marker) map.removeLayer(f.marker);
+  friends.delete(id);
+  if (detailId === id) closeDetail();
+}
+function subscribe() {
+  if (channel) { sb.removeChannel(channel); channel = null; }
+  channel = sb.channel("pf-" + me.id)
+    .on("postgres_changes", { event: "*", schema: "public", table: "pf_locations" }, onLocChange)
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "pf_friends", filter: "user_id=eq." + me.id }, () => loadFriends())
+    .subscribe();
+}
+function onLocChange(payload) {
+  const row = payload.new;
+  if (!row || !row.user_id || row.user_id === me.id) return;
+  const f = friends.get(row.user_id);
+  if (!f) { loadFriends(); return; }
+  f.loc = row;
+  updateMarker(f);
+  declutter();
+  renderList();
+  if (detailId === f.id) { renderDetail(); lookupAddress(f); }
+}
+async function addByCode(raw) {
+  const code = extractCode(raw);
+  if (code.length !== 6) { toast("Un code contient 6 caractères.", "err"); return false; }
+  if (me && code === me.code) { toast("C'est ton propre code.", "err"); return false; }
+  const { data, error } = await sb.rpc("pf_add_friend", { p_code: code });
+  if (error) { toast(errText(error), "err"); return false; }
+  justAdded.add(data.id);
+  haptic();
+  toast(`${data.name} fait maintenant partie de tes proches`);
+  $("#inCode").value = "";
+  closeModal("modalAdd");
+  await loadFriends();
+  setTimeout(() => openDetail(data.id), 350);
+  return true;
+}
+async function removeFriend(id) {
+  const f = friends.get(id);
+  if (!f) return;
+  if (!confirm(`Retirer ${f.name} de tes proches ? Vous ne verrez plus vos positions.`)) return;
+  const { error } = await sb.rpc("pf_remove_friend", { p_friend: id });
+  if (error) { toast(errText(error), "err"); return; }
+  dropFriend(id);
+  renderList();
+  toast(`${f.name} a été retiré·e de tes proches`);
+}
+
+/* ================= List ================= */
+function friendSub(f) {
+  if (!f.loc || (!f.loc.ghost && f.loc.lat == null)) return "Pas encore de position";
+  if (f.loc.ghost) return "Position masquée";
+  return ago(tsOf(f.loc));
+}
+function sortFriends(a, b) {
+  const ha = hasLoc(a), hb = hasLoc(b);
+  if (ha !== hb) return ha ? -1 : 1;
+  if (ha && myPos) return distM(myPos, a.loc) - distM(myPos, b.loc);
+  if (ha) return tsOf(b.loc) - tsOf(a.loc);
+  return a.name.localeCompare(b.name, "fr");
+}
+function renderList() {
+  if (!me) return;
+  const arr = [...friends.values()].filter((f) => f.name).sort(sortFriends);
+  $("#count").textContent = arr.length ? String(arr.length) : "";
+
+  let meSub;
+  if (ghost) meSub = "Mode fantôme : position masquée";
+  else if (locError === "denied") meSub = "Localisation désactivée";
+  else if (!myPos) meSub = "Recherche de ta position…";
+  else meSub = "Ta position est partagée";
+  let html = `<li class="person" data-id="me">
+    <span class="av me-av" style="--c:${me.color}">${esc(initial(me.name))}</span>
+    <span class="pmain"><b>${esc(me.name)} (moi)</b><small>${esc(meSub)}</small></span>
+    <span class="pdist">${myPos && !ghost ? "± " + fmtAcc(myPos.acc) : ""}</span></li>`;
+
+  if (!arr.length) {
+    html += `<li class="empty"><b>Ajoute tes proches</b><p>Partage ton code ou scanne le leur. Ils apparaîtront ici et sur la carte.</p><button class="btn primary wide" data-act="add">Ajouter un proche</button></li>`;
+  } else {
+    html += arr.map((f) => {
+      const has = hasLoc(f);
+      const dist = has && myPos ? fmtDist(distM(myPos, f.loc)) : "";
+      return `<li class="person${isLive(f) ? " is-live" : ""}${has ? "" : " is-off"}" data-id="${f.id}">
+        <span class="av" style="--c:${f.color}">${esc(initial(f.name))}</span>
+        <span class="pmain"><b>${esc(f.name)}</b><small>${esc(friendSub(f))}</small></span>
+        <span class="pdist">${dist}</span></li>`;
+    }).join("");
+  }
+  $("#people").innerHTML = html;
+}
+function tickTimes() {
+  friends.forEach(paintMarker);
+  renderList();
+  if (detailId) renderDetail();
+}
+
+/* ================= Detail ================= */
+const addrCache = new Map();
+let lastAddrCall = 0;
+function addrKey(f) { return f.loc.lat.toFixed(3) + "," + f.loc.lng.toFixed(3); }
+async function lookupAddress(f) {
+  if (!hasLoc(f)) return;
+  const key = addrKey(f);
+  if (addrCache.has(key)) return;
+  addrCache.set(key, null);
+  if (detailId === f.id) renderDetail();
+  const { lat, lng } = f.loc;
+  try {
+    const wait = Math.max(0, 1100 - (Date.now() - lastAddrCall));
+    if (wait) await sleep(wait);
+    lastAddrCall = Date.now();
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=fr&lat=${lat}&lon=${lng}`);
+    const j = await r.json();
+    const a = j.address || {};
+    const street = [a.road || a.pedestrian || a.footway || a.path || a.square || "", a.house_number || ""].filter(Boolean).join(" ");
+    const place = a.village || a.town || a.city || a.municipality || a.hamlet || a.suburb || "";
+    const poi = j.name && j.name !== a.road ? j.name : "";
+    const parts = [poi, street, place].filter(Boolean).filter((v, i, all) => all.indexOf(v) === i);
+    addrCache.set(key, parts.join(", "));
+  } catch {
+    addrCache.set(key, "");
+  }
+  if (detailId === f.id) renderDetail();
+}
+function addrText(f) {
+  const v = addrCache.get(addrKey(f));
+  if (v === undefined || v === null) return "Recherche de l'adresse…";
+  return v ? "Près de " + v : "Adresse introuvable";
+}
+function routeUrl(lat, lng) {
+  return isIOS
+    ? `https://maps.apple.com/?daddr=${lat},${lng}`
+    : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+}
+function openDetail(id) {
+  const f = friends.get(id);
+  if (!f) return;
+  haptic();
+  detailId = id;
+  sheetMode = "detail";
+  $("#viewList").hidden = true;
+  $("#viewDetail").hidden = false;
+  $("#sheetBody").scrollTop = 0;
+  renderDetail();
+  friends.forEach(paintMarker);
+  requestAnimationFrame(() => {
+    setSheetY(targetY());
+    if (hasLoc(f)) focusOn([f.loc.lat, f.loc.lng], Math.max(map.getZoom(), 15));
+  });
+  lookupAddress(f);
+}
+function closeDetail() {
+  detailId = null;
+  sheetMode = "list";
+  sheetState = "peek";
+  $("#viewDetail").hidden = true;
+  $("#viewList").hidden = false;
+  setSheetY(targetY());
+  friends.forEach(paintMarker);
+}
+function renderDetail() {
+  const f = friends.get(detailId);
+  if (!f) { closeDetail(); return; }
+  const has = hasLoc(f), live = isLive(f);
+  $("#dAv").style.setProperty("--c", f.color);
+  $("#dAv").textContent = initial(f.name);
+  $("#dName").textContent = f.name;
+  let sub;
+  if (!f.loc || (!f.loc.ghost && f.loc.lat == null)) sub = "N'a pas encore partagé de position";
+  else if (f.loc.ghost) sub = "A masqué sa position";
+  else if (live) sub = "Sur l'app en ce moment";
+  else sub = "Position envoyée " + ago(tsOf(f.loc));
+  $("#dSub").textContent = sub;
+  $("#dSub").classList.toggle("live", live);
+  $("#dAddr").hidden = !has;
+  $("#dFacts").hidden = !has;
+  $("#dRoute").classList.toggle("disabled", !has);
+  $("#dCenter").disabled = !has;
+  if (has) {
+    $("#dAddr").textContent = addrText(f);
+    $("#dDist").textContent = myPos ? fmtDist(distM(myPos, f.loc)) : "–";
+    $("#dTime").textContent = clock(tsOf(f.loc));
+    $("#dAcc").textContent = f.loc.accuracy != null ? "± " + fmtAcc(f.loc.accuracy) : "–";
+    $("#dRoute").href = routeUrl(f.loc.lat, f.loc.lng);
+  } else {
+    $("#dRoute").removeAttribute("href");
+  }
+  if (sheetMode === "detail" && !isWide()) {
+    const y = targetY();
+    if (Math.abs(y - sheetY) > 2) setSheetY(y);
+  }
+}
+
+/* ================= Sheet ================= */
+function targetY() {
+  if (sheetMode === "detail") {
+    const vis = $("#sheetGrab").offsetHeight + $("#viewDetail").offsetHeight + safeBottom();
+    return Math.max(0, sheetH - vis);
+  }
+  return sheetState === "full" ? 0 : Math.max(0, sheetH - (PEEK + safeBottom()));
+}
+function visibleSheet() { return isWide() ? 0 : Math.max(0, sheetH - sheetY); }
+function setSheetY(y, animate = true) {
+  const sh = $("#sheet");
+  sheetY = y;
+  sh.classList.toggle("no-anim", !animate);
+  sh.style.setProperty("--sheet-y", y + "px");
+  sh.dataset.state = sheetMode === "detail" ? "detail" : sheetState;
+  positionFabs();
+}
+function positionFabs() {
+  const f = $("#sideFabs");
+  if (isWide()) { f.style.bottom = ""; f.classList.remove("gone"); return; }
+  f.style.bottom = (visibleSheet() + 14) + "px";
+  f.classList.toggle("gone", sheetY < sheetH * 0.4);
+}
+function layoutSheet() {
+  const sh = $("#sheet");
+  if (isWide()) { sh.dataset.state = "peek"; positionFabs(); return; }
+  sheetH = Math.round(Math.min(innerHeight * 0.8, 700));
+  sh.style.setProperty("--sheet-h", sheetH + "px");
+  setSheetY(targetY(), false);
+}
+function initSheet() {
+  const sh = $("#sheet");
+  let d = null;
+  const zones = [$("#sheetGrab"), $("#listHead"), $("#detailHead")];
+  zones.forEach((z) => {
+    z.addEventListener("pointerdown", (e) => {
+      if (isWide() || e.target.closest("button")) return;
+      d = { y0: e.clientY, y: sheetY, moved: false, last: e.clientY, lt: performance.now(), v: 0 };
+      sh.classList.add("no-anim");
+      try { z.setPointerCapture(e.pointerId); } catch {}
+    });
+    z.addEventListener("pointermove", (e) => {
+      if (!d) return;
+      const dy = e.clientY - d.y0;
+      if (Math.abs(dy) > 5) d.moved = true;
+      const now = performance.now();
+      d.v = (e.clientY - d.last) / Math.max(1, now - d.lt);
+      d.last = e.clientY; d.lt = now;
+      let y = d.y + dy;
+      if (y < 0) y = y / 3;
+      sh.style.setProperty("--sheet-y", y + "px");
+      sheetY = Math.max(0, y);
+      positionFabs();
+    });
+    const end = (e) => {
+      if (!d) return;
+      const { moved, v } = d, dy = e.clientY - d.y0;
+      d = null;
+      sh.classList.remove("no-anim");
+      if (sheetMode === "detail") {
+        if (moved && (dy > 70 || v > 0.5)) closeDetail(); else setSheetY(targetY());
+        return;
+      }
+      if (!moved) sheetState = sheetState === "full" ? "peek" : "full";
+      else if (v < -0.4) sheetState = "full";
+      else if (v > 0.4) sheetState = "peek";
+      else sheetState = sheetY < sheetH / 2 ? "full" : "peek";
+      haptic();
+      setSheetY(targetY());
+    };
+    z.addEventListener("pointerup", end);
+    z.addEventListener("pointercancel", end);
+  });
+  addEventListener("resize", () => { layoutSheet(); });
+  layoutSheet();
+}
+
+/* ================= Modals ================= */
+function openModal(id) {
+  const m = $("#" + id);
+  m.hidden = false;
+  requestAnimationFrame(() => requestAnimationFrame(() => m.classList.add("open")));
+}
+function closeModal(id) {
+  const m = $("#" + id);
+  if (m.hidden) return;
+  m.classList.remove("open");
+  setTimeout(() => { if (!m.classList.contains("open")) m.hidden = true; }, 300);
+}
+function openAdd() {
+  haptic();
+  $("#addQr").innerHTML = qrSVG(shareUrl(me.code));
+  $("#addCode").textContent = fmtCode(me.code);
+  openModal("modalAdd");
+}
+function openSettings() {
+  haptic();
+  $("#setName").value = me.name;
+  $("#setNameSave").hidden = true;
+  $("#setCode").textContent = fmtCode(me.code);
+  $("#setGhost").checked = ghost;
+  renderSwatches($("#setSwatches"), me.color, saveColor);
+  document.querySelectorAll("#setTheme button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.theme === themeSetting())));
+  openModal("modalSettings");
+}
+async function shareCode() {
+  if (!me) return;
+  haptic();
+  const url = shareUrl(me.code);
+  const text = `Ajoute-moi sur PocketFind avec le code ${fmtCode(me.code)}`;
+  if (navigator.share) {
+    try { await navigator.share({ title: "PocketFind", text, url }); } catch {}
+  } else {
+    copyText(`${text} : ${url}`);
+  }
+}
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); toast("Copié"); }
+  catch { toast("Copie impossible sur cet appareil", "err"); }
+}
+async function saveName() {
+  const name = $("#setName").value.trim();
+  if (!name || name === me.name) { $("#setNameSave").hidden = true; return; }
+  const { error } = await sb.from("pf_profiles").update({ name }).eq("id", me.id);
+  if (error) { toast(errText(error), "err"); return; }
+  me.name = name; ls.set("me", me);
+  $("#setNameSave").hidden = true;
+  $("#setName").blur();
+  haptic();
+  toast("Nom enregistré");
+  renderList();
+}
+async function saveColor(c) {
+  const prev = me.color;
+  me.color = c; ls.set("me", me);
+  paintMe(); renderList();
+  const { error } = await sb.from("pf_profiles").update({ color: c }).eq("id", me.id);
+  if (error) { me.color = prev; ls.set("me", me); paintMe(); renderList(); toast(errText(error), "err"); }
+}
+async function deleteAccount() {
+  if (!confirm("Supprimer ton compte ? Ton code, tes proches et ta position seront effacés. Cette action est définitive.")) return;
+  const { error } = await sb.rpc("pf_delete_me");
+  if (error) { toast(errText(error), "err"); return; }
+  try { await sb.auth.signOut(); } catch {}
+  Object.keys(localStorage).filter((k) => k.startsWith("pf-")).forEach((k) => localStorage.removeItem(k));
+  location.reload();
+}
+
+/* ================= QR scanner ================= */
+let scanStream = null, scanning = false;
+async function openScanner() {
+  const msg = $("#scanMsg");
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast("La caméra n'est pas disponible ici. Entre le code à la main.", "err"); return; }
+  $("#scanner").hidden = false;
+  msg.textContent = "Ouverture de la caméra…";
+  try {
+    if (!window.jsQR) await loadScript(JSQR_URL);
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    const v = $("#scanVideo");
+    v.srcObject = scanStream;
+    await v.play();
+    msg.textContent = "Vise le QR code d'un proche";
+    scanning = true;
+    scanLoop();
+  } catch (e) {
+    closeScanner();
+    toast(e && e.name === "NotAllowedError" ? "Accès à la caméra refusé. Entre le code à la main." : "Impossible d'ouvrir la caméra.", "err");
+  }
+}
+function closeScanner() {
+  scanning = false;
+  if (scanStream) { scanStream.getTracks().forEach((t) => t.stop()); scanStream = null; }
+  $("#scanVideo").srcObject = null;
+  $("#scanner").hidden = true;
+}
+const scanCanvas = document.createElement("canvas");
+const scanCtx = scanCanvas.getContext("2d", { willReadFrequently: true });
+function scanLoop() {
+  if (!scanning) return;
+  const v = $("#scanVideo");
+  if (v.readyState >= 2 && v.videoWidth) {
+    const s = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
+    const w = Math.round(v.videoWidth * s), h = Math.round(v.videoHeight * s);
+    scanCanvas.width = w; scanCanvas.height = h;
+    scanCtx.drawImage(v, 0, 0, w, h);
+    const img = scanCtx.getImageData(0, 0, w, h);
+    const jsqr = typeof window.jsQR === "function" ? window.jsQR : (window.jsQR && window.jsQR.default);
+    const res = jsqr ? jsqr(img.data, w, h, { inversionAttempts: "dontInvert" }) : null;
+    if (res && res.data) {
+      const code = extractCode(res.data);
+      if (code.length === 6) { closeScanner(); addByCode(code); return; }
+    }
+  }
+  requestAnimationFrame(scanLoop);
+}
+
+/* ================= UI bindings ================= */
+function bindUI() {
+  $("#btnSettings").onclick = openSettings;
+  $("#btnAdd").onclick = openAdd;
+  $("#ghostChip").onclick = openSettings;
+  $("#btnFit").onclick = () => { haptic(); if (!fitAll()) toast("Personne à afficher pour l'instant"); };
+  $("#btnLocate").onclick = () => {
+    haptic();
+    if (myPos) { focusOn([myPos.lat, myPos.lng], Math.max(map.getZoom(), 16)); return; }
+    if (locError === "denied") { toast("La localisation est refusée pour PocketFind.", "err"); return; }
+    toast("Recherche de ta position…");
+    startWatch();
+  };
+  $("#banner").onclick = () => { if (locError === "denied") { locError = null; updateBanner(); startWatch(); } };
+
+  $("#people").addEventListener("click", (e) => {
+    if (e.target.closest('[data-act="add"]')) { openAdd(); return; }
+    const li = e.target.closest("li[data-id]");
+    if (!li) return;
+    if (li.dataset.id === "me") {
+      haptic();
+      if (myPos) focusOn([myPos.lat, myPos.lng], Math.max(map.getZoom(), 16));
+      return;
+    }
+    openDetail(li.dataset.id);
+  });
+
+  $("#dClose").onclick = () => { haptic(); closeDetail(); };
+  $("#dCenter").onclick = () => { const f = friends.get(detailId); if (f && hasLoc(f)) { haptic(); focusOn([f.loc.lat, f.loc.lng], Math.max(map.getZoom(), 16)); } };
+  $("#dRemove").onclick = () => removeFriend(detailId);
+  $("#dRoute").addEventListener("click", (e) => { if (!$("#dRoute").getAttribute("href")) e.preventDefault(); else haptic(); });
+
+  document.querySelectorAll(".modal").forEach((m) => {
+    m.addEventListener("click", (e) => { if (e.target === m || e.target.closest("[data-close]")) closeModal(m.id); });
+  });
+
+  $("#btnCopy").onclick = () => { haptic(); copyText(fmtCode(me.code)); };
+  $("#btnShare").onclick = shareCode;
+  $("#btnScan").onclick = () => { haptic(); openScanner(); };
+  $("#scanClose").onclick = closeScanner;
+  const inCode = $("#inCode");
+  inCode.addEventListener("input", () => {
+    const v = cleanCode(inCode.value).slice(0, 6);
+    inCode.value = v.length > 3 ? v.slice(0, 3) + " " + v.slice(3) : v;
+  });
+  const submitCode = async () => {
+    const b = $("#btnAddCode");
+    b.disabled = true;
+    await addByCode(inCode.value);
+    b.disabled = false;
+  };
+  $("#btnAddCode").onclick = submitCode;
+  inCode.addEventListener("keydown", (e) => { if (e.key === "Enter") submitCode(); });
+
+  const setName = $("#setName");
+  setName.addEventListener("input", () => { $("#setNameSave").hidden = !setName.value.trim() || setName.value.trim() === me.name; });
+  setName.addEventListener("keydown", (e) => { if (e.key === "Enter") saveName(); });
+  $("#setNameSave").onclick = saveName;
+  $("#setGhost").addEventListener("change", (e) => setGhost(e.target.checked));
+  $("#setShowCode").onclick = () => { closeModal("modalSettings"); setTimeout(openAdd, 280); };
+  document.querySelectorAll("#setTheme button").forEach((b) => {
+    b.onclick = () => {
+      haptic();
+      ls.set("theme", b.dataset.theme);
+      document.querySelectorAll("#setTheme button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      applyTheme();
+    };
+  });
+  $("#setDelete").onclick = deleteAccount;
+
+  // Keep the page itself from zooming; the map handles its own pinch.
+  document.addEventListener("gesturestart", (e) => e.preventDefault());
+  document.addEventListener("dblclick", (e) => { if (!e.target.closest("#map")) e.preventDefault(); });
+}
+
+$("#insSkip").onclick = async () => {
+  ls.set("skip-install", true);
+  showScreen(null);
+  await enter();
+};
+
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+
+boot().catch((e) => {
+  console.error(e);
+  $("#setupText").textContent = "Le démarrage a échoué : " + errText(e);
+  showScreen("setup");
+  hideSplash();
+});
+})();
+</script>
+</body>
+</html>

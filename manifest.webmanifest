@@ -1,0 +1,16 @@
+{
+  "name": "PocketFind",
+  "short_name": "PocketFind",
+  "description": "Find your people on a live map.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#2D5BFF",
+  "theme_color": "#2D5BFF",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
