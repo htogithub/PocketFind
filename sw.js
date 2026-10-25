@@ -1,7 +1,7 @@
 // PocketFind service worker
 // App files: network first (updates show up right away), cache as fallback.
 // Pinned libraries from the CDN: cache first.
-const CACHE = "pocketfind-v1";
+const CACHE = "pocketfind-v2";
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => {

@@ -17,6 +17,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&display=swap">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <style>
 :root{
   --accent:#2D5BFF; --accent-ink:#FFFFFF; --live:#14B86E; --danger:#D93A3F;
@@ -54,6 +55,7 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .leaflet-top{top:calc(var(--sat) + 4px)}
 .leaflet-control-attribution{background:transparent!important;color:rgba(0,0,0,.45)!important;font-size:9.5px!important;padding:0 6px!important;box-shadow:none!important}
 :root[data-theme="dark"] .leaflet-control-attribution{color:rgba(255,255,255,.4)!important}
+.raster-dark .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.88)}
 .scrim{position:fixed;left:0;right:0;top:0;height:calc(var(--sat) + 26px);background:linear-gradient(rgba(0,0,0,.30),rgba(0,0,0,0));pointer-events:none;z-index:10}
 
 /* Friend marker: avatar on the point, name and elapsed time right under it */
@@ -90,7 +92,7 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .banner:not([hidden]) + .chip{display:none}
 
 /* ---------- Bottom sheet ---------- */
-.sheet{position:fixed;left:0;right:0;bottom:0;z-index:30;height:var(--sheet-h,70vh);display:flex;flex-direction:column;background:var(--surface);-webkit-backdrop-filter:blur(26px) saturate(1.5);backdrop-filter:blur(26px) saturate(1.5);border-radius:26px 26px 0 0;box-shadow:0 -4px 28px rgba(16,22,48,.14);transform:translateY(var(--sheet-y,60vh));transition:transform .4s cubic-bezier(.2,.85,.25,1)}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:30;height:min(80%,700px);display:flex;flex-direction:column;background:var(--surface);-webkit-backdrop-filter:blur(26px) saturate(1.5);backdrop-filter:blur(26px) saturate(1.5);border-radius:26px 26px 0 0;box-shadow:0 -4px 28px rgba(16,22,48,.14);transform:translateY(var(--sheet-y,60vh));transition:transform .4s cubic-bezier(.2,.85,.25,1)}
 .sheet.no-anim{transition:none}
 .grab{flex:none;height:22px;display:grid;place-items:center;touch-action:none;cursor:grab}
 .grab span{width:38px;height:5px;border-radius:3px;background:var(--line);background:color-mix(in srgb,var(--ink) 18%,transparent)}
@@ -451,6 +453,8 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script>
@@ -458,7 +462,7 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 "use strict";
 
 /* ================= Constants ================= */
-const VERSION = "1.0";
+const VERSION = "1.1";
 const CFG = window.POCKETFIND_CONFIG || {};
 const COLORS = ["#2D5BFF", "#E8590C", "#12925E", "#7C4DEB", "#D63A7A", "#B7791F", "#0E8A94", "#3F4450"];
 const LIVE_MS = 75 * 1000;            // "Maintenant" while the last position is this fresh
@@ -468,10 +472,13 @@ const MIN_SEND_MS = 4 * 1000;         // never send more often than this
 const MOVE_M = 8;                     // send early if moved more than this
 const POLL_MS = 45 * 1000;            // safety refresh in case realtime drops
 const PEEK = 176;                     // visible height of the closed sheet
-const TILES = {
-  light: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-  dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+// Vector maps from OpenFreeMap (no key). Raster OpenStreetMap tiles as a fallback.
+const STYLES = {
+  light: "https://tiles.openfreemap.org/styles/liberty",
+  dark: "https://tiles.openfreemap.org/styles/dark"
 };
+const MAP_ATTR = "© OpenFreeMap © OpenMapTiles © OpenStreetMap";
+const RASTER_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const JSQR_URL = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js";
 
 /* ================= Helpers ================= */
@@ -600,7 +607,7 @@ let lastSent = { t: 0, lat: null, lng: null }, sending = false, sendFails = 0;
 const friends = new Map();
 const justAdded = new Set();
 let friendsLoadedOnce = false, loadingFriends = false;
-let detailId = null, sheetMode = "list", sheetState = "peek", sheetH = 0, sheetY = 0;
+let detailId = null, sheetMode = "list", sheetState = "peek", sheetY = 0;
 let userMovedMap = false, mainStarted = false, pendingCode = null;
 let pickedColor = COLORS[0];
 
@@ -614,11 +621,34 @@ function applyTheme() {
   if (map) setTiles(t);
 }
 mqDark.addEventListener && mqDark.addEventListener("change", applyTheme);
+let glLayer = null;
+function webglOK() {
+  try { const c = document.createElement("canvas"); return !!(c.getContext("webgl2") || c.getContext("webgl")); }
+  catch { return false; }
+}
+function useRaster() {
+  if (glLayer) { try { map.removeLayer(glLayer); } catch {} glLayer = null; }
+  if (!tileLayer) tileLayer = L.tileLayer(RASTER_URL, { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
+  document.documentElement.classList.toggle("raster-dark", tileTheme === "dark");
+}
 function setTiles(t) {
   if (tileTheme === t) return;
   tileTheme = t;
-  if (tileLayer) map.removeLayer(tileLayer);
-  tileLayer = L.tileLayer(TILES[t], { subdomains: "abcd", maxZoom: 20, attribution: "© OpenStreetMap © CARTO" }).addTo(map);
+  if (tileLayer) { useRaster(); return; }
+  if (glLayer) {
+    try { glLayer.getMaplibreMap().setStyle(STYLES[t]); return; } catch { useRaster(); return; }
+  }
+  if (typeof L.maplibreGL === "function" && window.maplibregl && webglOK()) {
+    try {
+      glLayer = L.maplibreGL({ style: STYLES[t], attribution: MAP_ATTR }).addTo(map);
+      // If the vector style has not loaded after a while, fall back to raster tiles.
+      setTimeout(() => {
+        try { if (glLayer && !glLayer.getMaplibreMap().isStyleLoaded()) useRaster(); } catch { useRaster(); }
+      }, 9000);
+      return;
+    } catch { glLayer = null; }
+  }
+  useRaster();
 }
 
 /* ================= Screens ================= */
@@ -798,6 +828,7 @@ function startMain() {
 
 function onVisibility() {
   if (visible()) {
+    layoutSheet();
     startWatch();
     loadFriends();
     if (!channel || (channel.state !== "joined" && channel.state !== "joining")) subscribe();
@@ -813,7 +844,10 @@ function safeBottom() { return $("#sabProbe").offsetHeight; }
 
 function initMap() {
   const view = ls.get("view", { c: [46.8, 8.23], z: 8 });
-  map = L.map("map", { zoomControl: false, attributionControl: false, maxZoom: 19, zoomSnap: 0.25, worldCopyJump: true })
+  map = L.map("map", {
+    zoomControl: false, attributionControl: false, maxZoom: 19, minZoom: 2, zoomSnap: 0.25,
+    maxBounds: [[180, -Infinity], [-180, Infinity]], maxBoundsViscosity: 1
+  })
     .setView(view.c, view.z);
   L.control.attribution({ position: "topleft", prefix: false }).addTo(map);
   setTiles(resolvedTheme());
@@ -1255,14 +1289,16 @@ function renderDetail() {
 }
 
 /* ================= Sheet ================= */
+function sheetH_() { return $("#sheet").offsetHeight; }
 function targetY() {
+  const sheetH = sheetH_();
   if (sheetMode === "detail") {
     const vis = $("#sheetGrab").offsetHeight + $("#viewDetail").offsetHeight + safeBottom();
     return Math.max(0, sheetH - vis);
   }
   return sheetState === "full" ? 0 : Math.max(0, sheetH - (PEEK + safeBottom()));
 }
-function visibleSheet() { return isWide() ? 0 : Math.max(0, sheetH - sheetY); }
+function visibleSheet() { return isWide() ? 0 : Math.max(0, sheetH_() - sheetY); }
 function setSheetY(y, animate = true) {
   const sh = $("#sheet");
   sheetY = y;
@@ -1275,13 +1311,11 @@ function positionFabs() {
   const f = $("#sideFabs");
   if (isWide()) { f.style.bottom = ""; f.classList.remove("gone"); return; }
   f.style.bottom = (visibleSheet() + 14) + "px";
-  f.classList.toggle("gone", sheetY < sheetH * 0.4);
+  f.classList.toggle("gone", sheetY < sheetH_() * 0.4);
 }
 function layoutSheet() {
   const sh = $("#sheet");
   if (isWide()) { sh.dataset.state = "peek"; positionFabs(); return; }
-  sheetH = Math.round(Math.min(innerHeight * 0.8, 700));
-  sh.style.setProperty("--sheet-h", sheetH + "px");
   setSheetY(targetY(), false);
 }
 function initSheet() {
@@ -1320,15 +1354,20 @@ function initSheet() {
       if (!moved) sheetState = sheetState === "full" ? "peek" : "full";
       else if (v < -0.4) sheetState = "full";
       else if (v > 0.4) sheetState = "peek";
-      else sheetState = sheetY < sheetH / 2 ? "full" : "peek";
+      else sheetState = sheetY < sheetH_() / 2 ? "full" : "peek";
       haptic();
       setSheetY(targetY());
     };
     z.addEventListener("pointerup", end);
     z.addEventListener("pointercancel", end);
   });
-  addEventListener("resize", () => { layoutSheet(); });
+  const relayout = () => { layoutSheet(); if (map) map.invalidateSize(); };
+  addEventListener("resize", relayout);
+  addEventListener("orientationchange", () => setTimeout(relayout, 300));
+  if (window.ResizeObserver) new ResizeObserver(relayout).observe($("#app"));
   layoutSheet();
+  setTimeout(relayout, 400);
+  setTimeout(relayout, 1500);
 }
 
 /* ================= Modals ================= */
